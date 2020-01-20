@@ -16,7 +16,7 @@ class FTPClient(object):
         self.password = None
         self.client = socket.socket()
         self.flag = False
-        self.path = r'//'
+        self.path = ''
 
     def connect(self, ip, port):
         self.client.connect((ip, port))
@@ -25,6 +25,7 @@ class FTPClient(object):
         message = '''
         命令帮助
         dir         : 查看当前目录下的文件
+        mkdir dir   : 创建目录
         cd folder   : 移动到某一目录下
         put filename: 上传某文件到当前目录
         get filename: 下载某文件从当前目录
@@ -87,35 +88,53 @@ class FTPClient(object):
             self.catalog = recv_data.decode()
             print(self.catalog)
 
+    def mkdir(self, new_dir):
+        info = {
+            'func': 'mkdir',
+            'account': self.account,
+            'path': self.path,
+            'mkdir_path': new_dir
+        }
+        self.client.send(json.dumps(info).encode('utf-8'))
+        recv_dir = self.client.recv(1024).decode()
+        recv_dir = json.loads(recv_dir)
+        if recv_dir['num'] == 600:
+            print(new_dir[1], '目录创建成功')
+        elif recv_dir['num'] == 601:
+            print('创建的目录已存在')
+        else:
+            print('未知错误')
+
     def cd(self, cmd_dir):
         info = {
             'func': 'cd',
             'account': self.account,
             'path': self.path,
-            'cd_path': cmd_dir[1]
+            'cd_path': cmd_dir
         }
         self.client.send(json.dumps(info).encode('utf-8'))
         recv_dir = self.client.recv(1024).decode()
         recv_dir = json.loads(recv_dir)
         if recv_dir['num'] == 200:
-            if cmd_dir[1] == '.':
-                if len(self.path.split('//')) <= 2:
+            if cmd_dir == '.':
+                if self.path == '':
                     print('已经到达根目录，无法再向前')
                 else:
                     new_path = self.path.split('//')
                     del new_path[-2]
                     self.path = '//'.join(new_path)
             else:
-                new_path = self.path.split('//')
-                new_path.insert(-1, cmd_dir[1])
-                self.path = '//'.join(new_path)
+                self.path = self.path + cmd_dir + '//'
         elif recv_dir['num'] == 201:
             print('移动的目录不存在')
         else:
             print('未知错误')
 
     def put(self, cmd_dir):
-        path = BASE_DIR + r'//database//' + self.account + r'//' + cmd_dir[1]
+        path = BASE_DIR + r'//database//' + self.account + r'//'
+        if not os.path.exists(path):
+            os.makedirs(path)
+        path = os.path.join(path, cmd_dir)
         if os.path.isfile(path):
             size = os.path.getsize(path)
             info = {
@@ -123,7 +142,7 @@ class FTPClient(object):
                 'account': self.account,
                 'path': self.path,
                 'size': size,
-                'name': cmd_dir[1]
+                'name': cmd_dir
             }
             self.client.send(json.dumps(info).encode('utf-8'))
             recv_dir = self.client.recv(1024).decode()
@@ -168,15 +187,17 @@ class FTPClient(object):
             'func': 'get',
             'account': self.account,
             'path': self.path,
-            'name': cmd_dir[1]
+            'name': cmd_dir
         }
         self.client.send(json.dumps(info).encode('utf-8'))
         recv_dir = self.client.recv(1024).decode()
         recv_dir = json.loads(recv_dir)
         if recv_dir['num'] == 400:
             self.client.send('开始接收'.encode('utf-8'))
-            path = BASE_DIR + r'//database//' + self.account + r'//' + cmd_dir[1]
-            f = open(path, 'wb')
+            path = BASE_DIR + r'//database//' + self.account + r'//'
+            if not os.path.exists(path):
+                os.makedirs(path)
+            f = open(os.path.join(path, cmd_dir), 'wb')
             recv_size = 0
             file_md5 = hashlib.md5()
             while recv_size < recv_dir['size']:
@@ -209,7 +230,7 @@ class FTPClient(object):
             'func': 'cut',
             'account': self.account,
             'path': self.path,
-            'name': cmd_dir[1]
+            'name': cmd_dir
         }
         self.client.send(json.dumps(info).encode('utf-8'))
         recv_dir = self.client.recv(1024).decode()

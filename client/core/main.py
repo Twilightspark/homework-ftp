@@ -14,8 +14,15 @@ def interactive(client):
             client.close()
             inter_flag = False
         else:
-            cmd_dir = cmd_data.split()
-            func = cmd_dir[0]
+            try:
+                """放入测试语句"""
+                check_index = cmd_data.index(' ')
+                cmd_dir = cmd_data[check_index + 1:]
+                func = cmd_data[:check_index]
+            except Exception as e:
+                """放入异常处理"""
+                func = cmd_data
+                cmd_dir = ''
             if hasattr(client, func):
                 action = getattr(client, func)
                 action(cmd_dir)

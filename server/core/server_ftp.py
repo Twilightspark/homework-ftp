@@ -8,8 +8,10 @@ import hashlib
 
 from conf.setting import BASE_DIR
 
-class FTPServer(socketserver. BaseRequestHandler):
+
+class FTPServer(socketserver.BaseRequestHandler):
     '''server ftp'''
+
     def handle(self):
         while True:
             try:
@@ -39,14 +41,16 @@ class FTPServer(socketserver. BaseRequestHandler):
             f.close()
             if password == data['password']:
                 self.request.send(b'100')
-                print('用户%s登陆成功：%s'%(account, self.client_address[0]))
+                self.disk_path = data['disk_path']
+                self.max_size = float(data['disk_size'])
+                print('用户%s登陆成功：%s' % (account, self.client_address[0]))
             else:
                 self.request.send(b'101')
         else:
             self.request.send(b'102')
 
     def dir(self):
-        path = BASE_DIR + r'//database//' + self.data['account'] + self.data['path']
+        path = self.disk_path + self.data['path']
         data = ''
         print('读取目录：', path)
         for i in os.listdir(path):
@@ -70,7 +74,7 @@ class FTPServer(socketserver. BaseRequestHandler):
             info['num'] = 200
             print('移动到上一级目录')
         else:
-            new_path = BASE_DIR + r'//database//' + self.data['account'] + self.data['path'] + self.data['cd_path'] + r'//'
+            new_path = self.disk_path + self.data['path'] + self.data['cd_path'] + r'//'
             if os.path.isdir(new_path):
                 info['num'] = 200
                 print('移动到新目录：', new_path)
@@ -81,27 +85,24 @@ class FTPServer(socketserver. BaseRequestHandler):
             'num': 303
         }
         size = 0
-        root_path = BASE_DIR + r'//database//' + self.data['account'] + r'//'
+        root_path = self.disk_path
         for root, dirs, files in os.walk(root_path):
             for f in files:
                 size += os.path.getsize(os.path.join(root, f))
         size = size + self.data['size']
-        account_path = BASE_DIR + r'//database//user//' + self.data['account'] + '.json'
-        f = open(account_path, 'r')
-        account_dir = json.loads(f.read())
-        f.close()
-        if size/1024/1024 > float(account_dir['disk_size']):
+        recv_flag = False
+        path = root_path
+        if size / 1024 / 1024 > self.max_size:
             info['num'] = 302
             self.request.send(json.dumps(info).encode('utf-8'))
-            recv_flag = False
         else:
-            path = BASE_DIR + r'//database//' + self.data['account'] + self.data['path'] + self.data['name']
+            path = root_path + self.data['path'] + self.data['name']
             if os.path.isfile(path):
                 info['num'] = 301
                 self.request.send(json.dumps(info).encode('utf-8'))
                 data = json.loads(self.request.recv(1024).decode())
                 if not data['recover']:
-                    path = BASE_DIR + r'//database//' + self.data['account'] + self.data['path'] + self.data['name'] + r'.new'
+                    path = root_path + self.data['path'] + self.data['name'] + '.new'
                 recv_flag = True
                 self.request.send('准备完成！'.encode('utf-8'))
             else:
@@ -109,6 +110,7 @@ class FTPServer(socketserver. BaseRequestHandler):
                 self.request.send(json.dumps(info).encode('utf-8'))
                 recv_flag = True
         if recv_flag:
+            print('客户端上传该路径文件', path)
             f = open(path, 'wb')
             recv_size = 0
             file_md5 = hashlib.md5()
@@ -135,7 +137,8 @@ class FTPServer(socketserver. BaseRequestHandler):
         info = {
             'num': 402
         }
-        path = BASE_DIR + r'//database//' + self.data['account'] + self.data['path'] + self.data['name']
+        path = self.disk_path + self.data['path'] + self.data['name']
+        print('客户端请求该路径文件', path)
         if os.path.isfile(path):
             size = os.path.getsize(path)
             info['num'] = 400
@@ -159,10 +162,26 @@ class FTPServer(socketserver. BaseRequestHandler):
         info = {
             'num': 502
         }
-        path = BASE_DIR + r'//database//' + self.data['account'] + self.data['path'] + self.data['name']
+        path = self.disk_path + self.data['path'] + self.data['name']
+        print('客户端删除该路径文件', path)
         if os.path.isfile(path):
             os.remove(path)
             info['num'] = 500
         else:
             info['num'] = 501
+        self.request.send(json.dumps(info).encode('utf-8'))
+
+    def mkdir(self):
+        info = {
+            'num': 602
+        }
+        new_path = self.disk_path + self.data['path'] + self.data['mkdir_path']
+        print('客户端请求新建该路径', new_path)
+        if os.path.exists(new_path):
+            info['num'] = 601
+            print('要创建的目录已存在')
+        else:
+            info['num'] = 600
+            os.makedirs(new_path)
+            print('创建新目录', new_path)
         self.request.send(json.dumps(info).encode('utf-8'))
